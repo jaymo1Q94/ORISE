@@ -6,3 +6,4 @@ I will be using the GitHub Docs Hello World Tutorial: https://docs.github.com/en
 
 Cheat Sheet for Markdown Syntax: https://www.markdownguide.org/cheat-sheet/ TLDR: It is typical HTML formatting.
 
+Going to practice around with pull requests first. 
