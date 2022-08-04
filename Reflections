@@ -5,3 +5,9 @@ Learned how to:
 2. Add files to a branch
 Push commits into a file
 Pull merge request into a file with new commits
+
+###
+
+You can use branches to isolate edits for a file that you want to update into a main branch. 
+This allows you to create workflows with other collaborators where they can reveiw your commits and or establish approval
+for your commits before pulling changes into a main branch. This helps with version control of projects I imagine. 
