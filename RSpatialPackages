@@ -1,0 +1,14 @@
+Here is a list of packages that I normally install and load for spatial data analysis. 
+#Install if new session 
+install.packages(c("sp", "raster", "spdep", "rgdal", "rspatial", "gstat", "dismo",
+                   "fields", "maptools", "spgwr", "rpart", "randomForest",
+                   "latticeExtra", "RColorBrewer", "spatialreg"))
+#Spatial Specific                   
+sp_pack <- c("sp", "raster", "spdep", "rgdal", "rspatial", "gstat", "dismo",
+             "fields", "maptools", "spgwr", "latticeExtra", "RColorBrewer",
+             "spatialreg")
+#Machine Learning for CART and RandomForest algorithms for regression and classification
+ml_pack <- c("rpart", "randomForest")
+
+#Load all at once
+lapply(c(sp_pack, ml_pack), require, character.only = T)
