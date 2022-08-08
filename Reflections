@@ -16,3 +16,9 @@ Also added the packages I use for safekeeping -- which I am finding very helpful
 You can use branches to isolate edits for a file that you want to update into a main branch. 
 This allows you to create workflows with other collaborators where they can reveiw your commits and or establish approval
 for your commits before pulling changes into a main branch. This helps with version control of projects I imagine. 
+
+###
+
+8.8.2022
+
+Added raster and spatial data science files to repo.
