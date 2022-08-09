@@ -1,0 +1,69 @@
+#Shapefiles are the most common file format for working with raster 
+
+#Reading Raster files with Shapefile ####
+
+install.packages(c("raster", "sp", "rgdal"))
+
+lapply(c("raster", "sp", "rgdal"), require, character.only = T)
+
+
+filename <- system.file("external/lux.shp", package="raster")
+
+filename
+
+#We still need to unpack the file in a writeable format but that 
+#requires the rgdal package 
+
+
+#Overwrite our scratch rasterfile with an imported shapefile
+
+s <- shapefile(filename)
+
+s
+
+showDefault(s)
+
+#Note that we didn't use rgdal here but for other files we can use
+#the readOGR function called from the rgdal package 
+
+#Writing Raster files with Spatial vectors 
+
+outfile <- 'test.shp'
+shapefile(s, outfile, overwrite = T)
+
+#Let's read another shapefile that we will write into a raster file 
+
+f <- system.file("external/rlogo.grd", package="raster")
+
+f
+
+r1 <- raster(f)
+
+r1
+
+#Since we've only read in one out of 3 bands of the raster file, we can
+#specify additional bands using the band = k argument 
+
+r2 <- raster(f, band=2)
+
+r3 <- raster(f, band =3)
+
+#Using brick to reader in all raster layers/bands as a single data object #
+
+b <- brick(f)
+
+b
+
+showDefault(b)
+
+#Looks likr RStudio will remember my most recent coordinate reference system 
+
+#You can also use stack but in most cases brick outperforms 
+
+s <- stack(f)
+
+#Writing Raster Data #####
+
+x <- writeRaster(s, 'output.tif', overwrite = T)
+
+x
