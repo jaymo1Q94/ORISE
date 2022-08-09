@@ -1,0 +1,215 @@
+#Vector Data Manipulation with PolyGons
+
+sp_pack <- c("rgdal", "sp", "raster")
+
+
+lapply(sp_pack, require, character.only = T)
+
+f <- system.file("external/lux.shp", package = "raster")
+
+p <- shapefile(f)
+
+
+p
+
+par(mai = c(0,0,0,0))
+
+plot(p)
+
+#Outline of a map 
+
+#Let's work with this map as if it were a dataframe 
+
+d <- data.frame(p)
+
+head(d)
+
+#Extract the geometry from the raster object (rarely needed)
+
+g <- geom(p)
+
+class(p) #SpatialPolygonDataframe
+
+class(d) #Dataframe
+
+class(g) #Matrix 
+
+#Manipulating Spatial Variables ####
+
+p$NAME_2 #variable info
+
+p[, 'NAME_2'] #univariate spatial polygon (subset)
+
+set.seed(0)
+
+p$new <- sample(letters, length(p)) #new variable with random values 
+
+p$new #same # of rows as our original p column-data
+
+p$new <- NULL #remove the variable 
+
+head(p)
+
+#Merging Data ####
+
+dfr <- data.frame(District = p$NAME_1, Canton = p$NAME_2, 
+                  Value = round(runif(length(p), 100, 1000)))
+
+dfr <- dfr[order(dfr$Canton), ]
+
+dfr
+
+pm <- merge(p, dfr, by.x = c('NAME_1', 'NAME_2'), by.y = c("District", "Canton"))
+
+#Now we have spatial data appended to our new dataset which creates
+#a new spatialpolygon df 
+
+pm
+
+#Manipulating Rows #### 
+
+i <- which(p$NAME_1 == "Grevenmacher")
+
+g <- p[i,]
+
+g
+
+#We can also select and query records from a plotted set using
+#select and click but that will happen later
+
+#returns a list of observations where Name1 is Gravenmacher
+
+#Append and Aggregate Spatial Data ####
+
+z <- raster(p, nrow = 2, ncol = 2, vals = 1:4)
+
+names(z) <- 'Zone'
+
+z
+
+#Coerce raster layer to spatial polgyons 
+
+z <- as(z, "SpatialPolygonsDataFrame")
+
+z
+
+z2 <- z[2,]
+
+plot(p)
+plot(z, add = T, border = 'blue', lwd = 5)
+plot(z2, add = T, border = 'red', lwd = 2, density = 3, col = 'red')
+
+#Appending spatial objects of the same vector type ### 
+
+b <- bind(p, z)
+
+p
+z
+
+#We can append p and z because they are both polygons 
+
+install.packages("rgeos")
+library(rgeos)
+
+pa <- aggregate(p, by = 'NAME_1')
+za <- aggregate(z)
+
+plot(za, col = 'light gray', border = 'light gray', lwd = 5)
+plot(pa, add = T, col = rainbow(3), lwd = 3, border = 'white')
+
+zag <- aggregate(z, dissolve = F)
+zag
+
+plot(zag, col = "light gray")
+
+#This polygon type is often used to represent archipelagos 
+
+??sp::aggregate
+
+zd <- disaggregate(zag)
+zd
+
+#Visually we can't see the disaggregation but when we compare the 
+#object classes we can see that the aggregated polygon has 1 feature
+#and the 
+
+#Erasing Polygons ####
+
+e <- erase(p, z2)
+
+e
+
+plot(e)
+
+#You can also do this mathemetically with e <- p-z2
+
+#Intersections 
+
+i <- intersect(p, z2)
+plot(i)
+
+#You can do this mathematically with i <- P*z2
+
+#Intersections with extent 
+
+e <- extent(6, 6.4, 49.7, 50)
+pe <- crop(p,e)
+plot(p)
+plot(pe, col = 'light blue', add = T)
+plot(e, add = T, lwd = 3, col = 'red')
+
+#Unions 
+
+u <- union(p,z)
+
+u <- p + z
+
+u
+
+plot(u)
+
+#Now we can change the aesthetics of our united map 
+
+set.seed(5)
+
+plot(u, col = sample(rainbow(length(u))))
+
+#Cover is a combo of intersect and union 
+
+cov <- cover(p, z)
+
+cov
+
+plot(cov)
+
+#Symmetrical difference 
+
+dif <- symdif(z,p)
+
+plot(dif, col = rainbow(length(dif)))
+
+#Spatial Queries #####
+
+#We can query polygons using spatial points
+
+pts <- matrix(c(6, 6.1, 5.9, 5.7, 6.4, 50, 49.9, 49.8, 49.7, 49.5), ncol = 2)
+
+spts <- SpatialPoints(pts, proj4string = crs(p))
+plot(z, col = 'light blue', lwd =2)
+points(spts, col = 'light gray', pch = 20, cex = 6)
+text(spts, 1:nrow(pts), col = 'red', font = 2, cex = 1.5)
+lines(p, col = 'blue', lwd = 2)
+
+#Pver can be used to query between spatial objects 
+
+over(spts, p)
+
+#We see where our spatial points and polygon data frame overlap 
+
+over(spts, z)
+
+#Extract can be used for queries between spatial and raster objects
+#THis is it's general use but it can also be used between spatial objects 
+
+extract(z, pts)
+
