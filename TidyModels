@@ -1,0 +1,156 @@
+tidytools <- install.packages(c("tidyverse", "tidymodels", "ggplot2", "broom"))
+
+install.packages("broom")
+library(broom)
+
+
+
+
+install.packages("tidymodels", type = "binary")
+install.packages("tidyverse", type = "binary")
+install.packages("ggplot2", type = "binary")
+install.packages("broom", type = "binary")
+install.packages("DiceDesign", type = "binary")
+library(tidymodels)
+library(ggplot2)
+library(tidyverse)
+library(broom)
+
+#read in the orange dataset 
+
+data(Orange)
+
+head(Orange)
+
+#Is there a relationship between age and circumference 
+
+cor(Orange$age, Orange$circumference)
+
+#There is a strong positive relationship between age and circumference 
+
+#Let's plot the relationship 
+
+ggplot(Orange, aes(age, circumference, color = Tree)) + geom_line()
+
+#We've done between-group analysis but if we use group_by we can
+#conduct a descriptive within-group analysis 
+
+Orange %>% group_by(Tree) %>% 
+  summarize(correlation = cor(age, circumference))
+
+ct <- cor.test(Orange$age, Orange$circumference)
+ct
+
+tidy(ct)
+
+#tidying up the output is cool but these p-values are hard to display
+#the interpretation is fine but the display is hard 
+
+#Nest-map-unnest workflow ####
+
+#Nest
+
+nested <- Orange %>% nest(data = c(age, circumference))
+
+#Use the map function from purr to apply a correlation test to 
+#each nested tibble 
+
+#Map
+
+
+nested %>% 
+  mutate(test = map(data, ~cor.test(.x$age, .x$circumference)),
+         tidied = map(test, tidy)) %>% as_tibble()
+
+#note how we had to coerce into a tibble the tidyverse functions
+#did not do it for us 
+
+#Unnest 
+
+Orange %>% nest(data = c(age, circumference)) %>%
+  mutate(test = map(data, ~cor.test(.x$age, .x$circumference)),
+         tidied = map(test,tidy)) %>%
+  unnest(cols = tidied) %>%
+  select(-data, -test)
+
+#Regression Models ####
+
+lm_fit <- lm(age ~ circumference, data = Orange)
+summary(lm_fit)
+
+#clean up the output ####
+
+tidy(lm_fit)
+
+#Nest, Map, Unnest
+#This applies the regression model across our nested tibbles to
+#build a model for each tree
+#remember the utility of nest-map-unnest is that it allows
+#us to do within-subject analyses and not just between-subject analyses 
+
+Orange %>%
+  nest(data = c(-Tree)) %>% 
+  mutate(
+    fit = map(data, ~ lm(age ~ circumference, data = .x)),
+    tidied = map(fit, tidy)
+  ) %>% 
+  unnest(tidied) %>% 
+  select(-data, -fit)
+
+#Tidy regresion models with multiple covariates 
+
+data(mtcars) 
+
+mtcars <- as_tibble(mtcars)
+
+class(mtcars)
+
+mtcars
+
+mtcars %>%
+  nest(data = c(-am)) %>% 
+  mutate(
+    fit = map(data, ~ lm(wt ~ mpg + qsec + gear, data = .x)),  # S3 list-col
+    tidied = map(fit, tidy)
+  ) %>% 
+  unnest(tidied) %>% 
+  select(-data, -fit)
+
+#The nesting line let's us know which column to use as the nesting variable
+
+#ok so the value does print in an easier toread format if it's large enough 
+
+#if we want multiple versions of the fit data 
+#we can do that as well
+
+?glance
+
+regressions <- 
+  mtcars %>%
+  nest(data = c(-am)) %>% 
+  mutate(
+    fit = map(data, ~ lm(wt ~ mpg + qsec + gear, data = .x)),
+    tidied = map(fit, tidy),
+    glanced = map(fit, glance),
+    augmented = map(fit, augment)
+  )
+
+#Note how there's nothing to Unnest 
+
+#Glanced is good for model fitting diagnostics 
+
+regressions$glanced
+
+#Tidied is good for general reporting
+
+regressions$tidied
+
+#Augment is good for model fitting diagnostics
+
+regressions$augmented
+
+#Unnest the tidied  set 
+
+regressions %>% 
+  select(tidied) %>% 
+  unnest(tidied)
