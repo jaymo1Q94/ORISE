@@ -1,0 +1,385 @@
+sp_pack <- c("sp", "raster", "spdep", "rgdal", "rspatial", "gstat", "dismo",
+             "fields", "maptools", "spgwr", "latticeExtra", "RColorBrewer",
+             "spatialreg", "spatstat")
+
+ml_pack <- c("rpart", "randomForest")
+
+install.packages(c("sp", "raster", "spdep", "rgdal", "rspatial", "gstat", "dismo",
+                   "fields", "maptools", "spgwr", "rpart", "randomForest",
+                   "latticeExtra", "RColorBrewer", "spatialreg", "spatstat"))
+
+lapply(c(sp_pack, ml_pack), require, character.only = T)
+
+
+city <- sp_data('city')
+crime <- sp_data('crime')
+
+city #polygon data frame
+crime #points data frame 
+
+plot(city, col = "light blue")
+points(crime, col = 'red', cex = .5, pch = '+')
+
+crime$CATEGORY
+names(crime)
+
+#sort crime incidence by category 
+
+
+tb <- sort(table(crime$CATEGORY))[-1]
+
+#extract coordinates 
+
+xy <- coordinates(crime)
+
+xy
+
+#these are coordinate points but what's the reference 
+
+#subset to unique coordinate values 
+
+xy <- unique(xy)
+
+#This reduces our dimensions too 
+
+#Basic Statistics #####
+
+#mean center 
+
+mc <- apply(xy, 2, mean)
+
+head(mc)
+
+sd <- sqrt(sum((xy[,1]- mc[1])^2 + (xy[,2] - mc[2])^2)/nrow(xy))
+
+#if you get a NaN warning you need to fix the syntax those 
+#parentheses are complicated 
+
+#Plot ####
+
+plot(city, col = 'light blue')
+points(crime, cex = .5)
+points(cbind(mc[1], mc[2]), pch = '*', col = 'red', cex = 5)
+#circle 
+bearing <- 1:360*pi/180
+cx <- mc[1] + sd*cos(bearing)
+cy <- mc[2] + sd*sin(bearing)
+circle <- cbind(cx, cy)
+lines(circle, col = 'red', lwd = 2)
+
+#Computing Point Density ####
+
+CityArea <- raster::area(city)
+dens <- nrow(xy)/CityArea
+
+dens
+
+#What is the unit of the dens object?
+#What is the # of crimes per square km?
+
+#The unit is the quadrat for a standardized unit of area 
+
+r <- raster(city)
+res(r) <- 1000
+
+r
+
+r <- rasterize(city, r)
+plot(r)
+
+quads <- as(r, 'SpatialPolygons')
+plot(quads, add = T)
+points(crime, col = 'red', cex = .5)
+
+#Count the # of events in each quadrat using rasterize 
+
+nc <- rasterize(coordinates(crime), r, fun = 'count', background = 0)
+
+plot(nc)
+plot(city, add = T)
+
+ncrimes <- mask(nc, r)
+plot(ncrimes)
+plot(city, add = T)
+
+#Our legend is off 
+
+#Calculate frequencies 
+
+f <- freq(ncrimes, useNA = 'no')
+head(f)  
+plot(f, pch = 20)
+
+#Compute average # of cases 
+
+quadrats <- sum(f[,2])
+cases <- sum(f[,1]*f[,2])
+mu <- cases/quadrats
+mu
+
+#Tabulate 
+
+ff <- data.frame(f)
+
+colnames(ff) <- c('K', 'X')
+
+ff$Kmu <- ff$K-mu
+ff$Kmu2 <- ff$Kmu^2
+ff$XKmu2 <- ff$Kmu2*ff$X
+head(ff)
+
+s2 <- sum(ff$XKmu2)/ (sum(ff$X)-1)
+s2
+
+#Calculate Variane Mean Ratio 
+
+#VMR properties arise from Poisson distribution properties
+#Note that since incidence is a rate value, then it makes sense
+#to use the Poisson to work with rate-data
+#The VMR being greater than 1 tells us that there is spatial-clustering
+#of our events of interest 
+#Or in other words, crime is not evenly distributed across our spatial map,
+#and tens to cluster or concentrate in certain areas over others 
+
+VMR <- s2/mu
+
+VMR
+
+#Note that use of coordinates indicates working on a planar reference system
+
+d <- dist(xy)
+class(d)
+
+dm <- as.matrix(d)
+
+dm[1:5, 1:5]
+
+diag(dm) <- NA
+
+dm[1:5, 1:5]
+
+dmin <- apply(dm, 1, min, na.rm = T)
+?apply
+head(dmin)
+
+#Now we have the min values ummarized for each row in our matrix 
+
+#Calculate mean-mearest neighbor distance 
+
+mdmin <- mean(dmin)
+
+mdmin
+
+#Find the nearest neighbour of each point 
+
+
+
+wdmin <- apply(dm, 1, which.min)
+
+wdmin
+
+#note this cannot accomodate multiple neighbors that share the same distance 
+
+plot(city)
+points(crime, cex = .1)
+ord <- rev(order(dmin))
+far25 <- ord[1:25]
+neighbors <- wdmin[far25]
+points(xy[far25, ], col = 'blue', pch = 20)
+points(xy[neighbors, ], col = 'red')
+for (i in 25) { 
+  lines(rbind(xy[i, ], xy[wdmin[i], ]), col = 'red')
+}
+
+#Computing the G Function 
+
+max(dmin)
+distance <- sort(unique(round(dmin)))
+Gd <- sapply(distance, function(x) sum(dmin < x))
+Gd <- Gd / length(dmin)
+plot(distance, Gd)
+
+#Note that the G of distance function is used to detect spatial clustering 
+
+#Use centers of our raster cells to compute the F function 
+
+#Background on G and F functions for point-pattern analysis
+#http://www.css.cornell.edu/faculty/dgr2/_static/files/ov/ov_PPA_Handout.pdf
+
+
+#use xlim 
+
+plot(distance, Gd, xlim = c(0,500))
+
+stepplot <- function(x, y, type='l', add=FALSE, ...) {
+  x <- as.vector(t(cbind(x, c(x[-1], x[length(x)]))))
+  y <- as.vector(t(cbind(y, y)))
+  if (add) {
+    lines(x,y, ...)
+  } else {
+    plot(x,y, type=type, ...)
+  }
+}
+
+stepplot(distance, Gd, type='l', lwd=2, xlim=c(0,500))
+
+# get the centers of the 'quadrats' (raster cells)
+p <- rasterToPoints(r)
+# compute distance from all crime sites to these cell centers
+d2 <- pointDistance(p[,1:2], xy, longlat=FALSE)
+# the remainder is similar to the G function
+Fdistance <- sort(unique(round(d2)))
+mind <- apply(d2, 1, min)
+Fd <- sapply(Fdistance, function(x) sum(mind < x))
+Fd <- Fd / length(mind)
+plot(Fdistance, Fd, type='l', lwd=2, xlim=c(0,3000))
+
+#Compute expected values 
+
+ef <- function(d, lambda) {
+  E <- 1 - exp(-1 * lambda * pi * d^2)
+}
+expected <- ef(0:2000, dens)
+
+plot(distance, Gd, type='l', lwd=2, col='red', las=1,
+     ylab='F(d) or G(d)', xlab='Distance', yaxs="i", xaxs="i")
+lines(Fdistance, Fd, lwd=2, col='blue')
+lines(0:2000, expected, lwd=2)
+legend(1200, .3,
+       c(expression(italic("G")["d"]), expression(italic("F")["d"]), 'expected'),
+       lty=1, col=c('red', 'blue', 'black'), lwd=2, bty="n")
+
+
+distance <- seq(1, 30000, 100)
+Kd <- sapply(distance, function(x) sum(d < x)) # takes a while
+Kd <- Kd / (length(Kd) * dens)
+plot(distance, Kd, type='l', lwd=2)
+
+#Create a Kernal Density raster
+#First create a point-pattern object
+#Then create an observation window class object 
+
+cityOwin <- as.owin(city)
+class(cityOwin)
+cityOwin
+
+pts <- coordinates(crime)
+
+p <- ppp(pts[,1], pts[,2], window = cityOwin)
+p
+plot(p)
+
+attr(p, "rejects")
+
+p_no_rej <- as.ppp(p)
+
+plot(p_no_rej)
+
+#the reject points look like crosses?
+
+#Compute Kernel Density 
+
+ds <- density(p)
+class(ds)
+plot(ds, main = 'crime density')
+
+nrow(pts)
+r <- raster(ds)
+s <- sum(values(r), na.rm = T)
+s*prod(res(r))
+
+str(ds)
+sum(ds$v, na.rm=TRUE) * ds$xstep * ds$ystep
+p$n
+
+#Another example using population density interpolation 
+census <- sp_data("census2000.rds")
+
+census$area <- area(census)
+census$area <- census$area/27878400
+census$dens <- census$POP2000 / census$area
+
+p <- coordinates(census)
+
+#dissolves all polygons into one via aggregate
+
+win <- aggregate(census)
+
+View(win)
+
+plot(census)
+points(p, col='red', pch=20, cex=.25)
+plot(win, add=TRUE, border='blue', lwd=3)
+
+owin <- as.owin(win)
+pp <- ppp(p[,1], p[,2], window=owin, marks=census$dens)
+
+#Remove the point that is outside of our window
+
+sp <- SpatialPoints(p, proj4string=CRS(proj4string(win)))
+library(rgeos)
+i <- gIntersects(sp, win, byid=TRUE)
+which(!i)
+## [1] 588
+
+plot(census)
+points(sp)
+points(sp[!i,], col='red', cex=3, pch=20)
+
+zoom(census)
+
+points(sp[!i,], col='red')
+
+crime$fcat <- as.factor(crime$CATEGORY)
+w <- as.owin(city)
+xy <- coordinates(crime)
+mpp <- ppp(xy[,1], xy[,2], window = w, marks=crime$fcat)
+pp <- ppp(p[i,1], p[i,2], window=owin, marks=census$dens[i])
+plot(pp)
+plot(city, add=TRUE)
+
+spp <- split(mpp)
+plot(spp[1:4], main='')
+
+
+
+
+s <- Smooth.ppp(pp)
+
+plot(s)
+plot(city, add=TRUE)
+
+par(mfrow=c(2,2), mai=c(0.25, 0.25, 0.25, 0.25))
+for (offense in c("Auto Theft", "Drunk in Public", "DUI", "Arson")) {
+  plot(city, col='grey')
+  acrime <- crime[crime$CATEGORY == offense, ]
+  points(acrime, col = "red")
+  title(offense)
+}
+
+plot(density(spp[1:4]), main='')
+
+spatstat.options(checksegments = FALSE)
+ktheft <- Kest(spp$"Auto Theft")
+ketheft <- envelope(spp$"Auto Theft", Kest)
+
+ktheft <- Kest(spp$"Arson")
+ketheft <- envelope(spp$"Arson", Kest)
+
+par(mfrow=c(1,2))
+plot(ktheft)
+plot(ktheft)
+
+KS.arson <- cdf.test(spp$'Arson', ds)
+KS.arson
+
+KS.drunk <- cdf.test(spp$'Drunk in Public', ds)
+KS.drunk
+
+#Note so much for Arson but yes for Drunk in Public 
+#Using population density as a covariate  
+
+kc <- Kcross(mpp, i = "Drunk in Public", j = "Arson")
+ekc <- envelope(mpp, Kcross, nsim = 50, i = "Drunk in Public", j = "Arson")
+
+plot(ekc)
