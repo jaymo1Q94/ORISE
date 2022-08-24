@@ -1,0 +1,368 @@
+sp_pack <- c("sp", "raster", "spdep", "rgdal", "rspatial", "gstat", "dismo",
+             "fields", "maptools", "spgwr", "latticeExtra", "RColorBrewer",
+             "spatialreg", "spatstat")
+
+ml_pack <- c("rpart", "randomForest")
+
+rs_pack <- c("RStoolbox", "landsat", "hsdar", "rasterVis")
+
+
+
+
+
+install.packages(c("sp", "raster", "spdep", "rgdal", "rspatial", "gstat", "dismo",
+                   "fields", "maptools", "spgwr", "rpart", "randomForest",
+                   "latticeExtra", "RColorBrewer", "spatialreg", "spatstat",
+                   "RStoolbox", "landsat", "hsdar", "rasterVis"))
+
+
+
+lapply(c(sp_pack, ml_pack, rs_pack), require, character.only = T)
+
+#Create a folder and suppress wornings
+#Pull the file from the ucdavis data sample folder
+
+dir.create('data', showWarnings = FALSE)
+if (!file.exists('data/rs/samples.rds')) {
+  download.file('https://biogeo.ucdavis.edu/data/rspatial/rsdata.zip', dest = 'data/rsdata.zip')
+  unzip('data/rsdata.zip', exdir='data')
+}
+
+#Import spectral data from tagged image format files 
+
+b2 <- raster('data/rs/LC08_044034_20170614_B2.tif')
+# Green
+b3 <- raster('data/rs/LC08_044034_20170614_B3.tif')
+# Red
+b4 <- raster('data/rs/LC08_044034_20170614_B4.tif')
+# Near Infrared (NIR)
+b5 <- raster('data/rs/LC08_044034_20170614_B5.tif')
+
+#These are raster layer files are we gonna stack/brick'em?
+
+#Image info and stats 
+
+crs(b2)
+
+#We're in canada and alaska lol
+
+crs(b3)
+crs(b4)
+crs(b5)
+
+#Create a rasterstack 
+
+s1 <- raster::stack(b5, b4, b3)
+
+crs(s1)
+
+#Since they're all in the same crs only one crs is printed for the stack 
+
+s1
+  
+#You can also create stacks directly from files to combine reading, importing
+#and stacking 
+
+filenames <- paste0('data/rs/LC08_044034_20170614_B', 1:11, '.tif')
+filenames
+
+landsat <- stack(filenames)
+
+crs(landsat)
+landsat
+
+#Note that we won't use the last 4 layers of this file and will remove them
+#in the processing stage of our data 
+
+#Plot our rasters 
+
+par(mfrow= c(5,5), mar = c(1,1,1,1))
+plot(b2, main = "Blue", col = gray(0:100 / 100))
+plot(b3, main = "Green", col = gray(0:100 / 100))
+plot(b4, main = "Red", col = gray(0:100 / 100))
+plot(b5, main = "NIR", col = gray(0:100 / 100))
+
+#We can use our understanding of rasterlayers as bands
+#to construct a multicolor imaging plot using the 
+#spectral data to apply each color spectrum to a raster layer in a stack
+
+#the stretch argument we supply improves the visualization 
+
+par(mfrow = c(1,1), mar = c(1,1,1,1))
+landsatRGB <- stack(b4, b3, b2)
+plotRGB(landsatRGB, axes = TRUE, stretch = 'lin', main = 'Landsat True Color Composite')
+
+#We an use NIR composite imaging to enhance vegetation 
+
+#We'll plot them together for comparison
+
+par(mfrow = c(1,2))
+plotRGB(landsatRGB, axes=TRUE, stretch="lin", main="Landsat True Color Composite")
+landsatFCC <- stack(b5, b4, b3)
+plotRGB(landsatFCC, axes=TRUE, stretch="lin", main="Landsat False Color Composite")
+
+
+#It would appear that the positions of the bands in the stack is important 
+
+#Subset and Rename Bands ####
+
+#first 3 
+
+landsatsub1 <- subset(landsat, 1:3)
+
+landsatsub2 <- landsat[[1:3]]
+
+nlayers(landsat)
+
+nlayers(landsatsub1)
+
+nlayers(landsatsub2)
+
+#Remove the last 4 bands of our landsat file 
+
+landsat <- subset(landsat, 1:7)
+
+nlayers(landsat)
+
+#Rename our variables to spectral color labels 
+
+names(landsat) <- c('ultra-blue', 'blue', 'green', 'red', 'NIR', 'SWIR1', 'SWIR2')
+
+#use the spacial extent to create a cropping object 
+
+extent(landsat)
+
+e <- extent(624387, 635752, 4200047, 4210939)
+
+landsatcrop <- crop(landsat, e)
+
+landsatcrop
+
+#Savings results to disk 
+
+landsat.proj <- writeRaster(landsatcrop, filename = "cropped-landsat.tif",
+                            overwrite = T)
+
+#this format keeps our layer order, but removes our layer names 
+
+writeRaster(landsatcrop, filename="cropped-landsat.grd", overwrite=TRUE)
+
+#the raster.grd object saves the layer names, but the file format cannot
+#be read by many other programs 
+
+#Explore the relationships between raster bands using scatterplots 
+
+pairs(landsatcrop[[1:2]], main = 'Ultra-blue vs Blue')
+
+#very strong relationship
+
+#when raster layers have a very strong relationship, my understanding
+#is that we can use either the ultra-blue or blue raster layers to 
+#build our imaging file without much information loss compared
+#to using both
+
+
+#plot red vs NIR 
+
+pairs(landsatcrop[[4:5]], main = "Red vs NIR")
+
+#basically no relationship as a result of the difference in reflection values
+#between vegitation in the NIR band vs the red band 
+#this spike in this plot on the y-axis is caused by the high reflectivity
+#of vegetation in the NIR band
+#the majority of the red we are seeing is concentrated alongside NIR
+#at the point of origin on this graph. 
+#this concentration means that a geographic feature is reflecting more than one 
+#spectral bands Specifically, water can absorb all spectral bands,
+#resulting in the high concentration values 
+#lastly, the final tail of values in the upper-right hand corner
+#come from soil and concrete features that are reflecting the 
+#near-infrared band 
+
+#Extract pixel values 
+
+#First we'll load a polygon dataframe with land use land cover info 
+
+samp <- readRDS('data/rs/samples.rds')
+ptsamp <- spsample(samp, 300, type = 'regular')
+samp
+ptsamp$class
+
+View(samp)
+
+samp[[2]]
+
+#each feature classifier is assigned a unique numeric id
+
+ptsamp$class <- over(ptsamp, samp)$class
+
+#create a dataset that merges our landsat data with our sample values and
+#classifications 
+
+df <- extract(landsat, ptsamp)
+
+head(df)
+
+#which gives us a matrix of values appended to our spectral wavelengths 
+
+
+#Create a spectral profile set 
+#we've already extracted spectral values, now we can use our dataset
+#to compute reflectance values for geologic features 
+
+ms <- aggregate(df, list(ptsamp$class), mean)
+
+head(ms)
+
+rownames(ms) <- ms[,1]
+
+ms
+
+ms
+
+#I think we want to remove the group one column
+
+dim(ms)
+
+class(ms)
+
+View(ms)
+
+#this just removes the header rows?
+
+#the format is fine let's just keep an eye on thet group.1 column 
+
+#plot the mean spectra
+
+mycolor <- c('darkred', 'yellow', 'burlywood', 'cyan', 'blue')
+
+ms <- as.matrix(ms)
+
+ms <- as.numeric(ms[1:5, 2:7])
+
+#create an empty plot 
+
+plot(0, ylim=c(0,0.6), xlim = c(1,7), type='n', xlab="Bands", ylab = "Reflectance")
+
+#overlay our reflectance values using a for loop
+
+for (i in 1:nrow(ms)) {
+  lines(ms[i,], typle = 'l', lwd = 3, lty = 1, col = mycolor[i])
+}
+title(main = "Spectral Profile from Landsat", font.main = 2)
+legend("topleft", rownames(ms), cex = 0.8, col = mycolor,
+       lty = 1, lwd = 3, bty = "n")
+
+#Conceptually this plot make sense
+
+#water has low reflectancy values because water absorbs light on all
+#waves of the color spectrum 
+
+#similarly features with vegetation have higher reflection values 
+
+#Let's create a normalized difference vegetation index 
+
+raslist <- paste0('data/rs/LC08_044034_20170614_B', 1:11, ".tif")
+landsat <- stack(raslist)
+
+names(landsat)
+
+landsatRGB <- landsat[[c(4,3,2)]]
+landsatFCC <- landsat[[c(5,4,3)]]
+
+vi <- function(img, k, i) {
+  bk <- img[[k]]
+  bi <- img[[i]]
+  vi <- (bk - bi)/(bk + bi)
+  return(vi)
+}
+
+#Since im still practicing with writing code, let's describe what's
+#happening in this code 
+
+#line one is saying that our new function, vi, is expecting 
+#an img data object, with i indices of k layers 
+
+#bk will be our k layer object
+#bi will be our i indices object
+
+#the formula for our indexing function is the ratio of the difference
+#and the sum of our layer and indices 
+#lastly, the print out will be our vi value 
+
+#Check the index for NIR and red spectral values
+
+ndvi <- vi(landsat, 5, 4)
+
+plot(ndvi, col = rev(terrain.colors(10)), main = "Landsat-NDVI")
+
+#the green density is a product of our index 
+
+#alternative function....
+
+vi2 <- function(x, y) {
+  (x - y) / (x + y)
+}
+ndvi2 <- overlay(landsat[[5]], landsat[[4]], fun=vi2)
+plot(ndvi2, col=rev(terrain.colors(10)), main="Landsat-NDVI")
+
+#i love how one is more friendly for people who are object-programming
+#oriented and the other is more friendly for people who are stats 
+#oriented while while still asking for profiency of both
+
+#Should we do water and built-up?
+
+
+ndvi <- vi(landsat, 5, 4)
+
+names(landsat)
+
+par(mfrow = c(1,1), mar = c(.5, .5, .5, .5))
+hist(ndvi,
+main = "Distribution of NDVI values",
+xlab = "NDVI",
+ylab= "Frequency",
+col = "wheat",
+xlim = c(-0.5, 1),
+breaks = 30,
+xaxt = 'n')
+
+axis(side=1, at = seq(-0.5,1, 0.05), labels = seq(-0.5,1, 0.05))
+
+#We will use this for thresholding 
+
+veg <- reclassify(ndvi, cbind(-Inf, 0.4, NA))
+plot(veg, main='Vegetation')
+
+#plot the lowest band 
+
+land <- reclassify(ndvi, c(-Inf, 0.25, NA,  0.25, 0.3, 1,  0.3, Inf, NA))
+plot(land, main = 'What is it?')
+
+plotRGB(landsatRGB, r=1, g=2, b=3, axes=TRUE, stretch="lin", main="Landsat False Color Composite")
+plot(land, add=TRUE, legend=FALSE)
+
+vegc <- reclassify(ndvi, c(-Inf,0.25,1, 0.25,0.3,2, 0.3,0.4,3, 0.4,0.5,4, 0.5,Inf, 5))
+plot(vegc,col = rev(terrain.colors(4)), main = 'NDVI based thresholding')
+
+set.seed(1)
+sr <- sampleRandom(landsat, 10000)
+plot(sr[,c(4,5)], main = "NIR-Red plot")
+
+#classic vegetation and soil plot
+
+pca <- prcomp(sr, scale = TRUE)
+pca
+
+screeplot(pca)
+
+pci <- predict(landsat, pca, index = 1:2)
+plot(pci[[1]])
+
+pc2 <- reclassify(pci[[2]], c(-Inf,0,1,0,Inf,NA))
+par(mfrow = c(1,2))
+plotRGB(landsatFCC, r = 1, g = 2, b = 3, axes = TRUE, stretch = "lin", main = "Landsat False Color Composite")
+plotRGB(landsatFCC, r = 1, g = 2, b = 3, axes = TRUE, stretch = "lin", main = "Landsat False Color Composite")
+plot(pc2, legend = FALSE, add = TRUE)
+
+####
