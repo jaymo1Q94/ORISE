@@ -1,0 +1,179 @@
+#https://bookdown.org/daniel_dauber_io/r4np_book/mixed-methods-research.html
+
+#Package Installation - Uncomment if Already Installed 
+
+#install.packages("tidyverse")
+#install.packages("tidytext")
+#install.packages("tidymodels")
+#tidytools <- c("tidyverse", "tidytext", "tidymodels")
+
+lapply(tidytools, require, character.only = T)
+
+sentence <- "This car, is my car."
+
+df_text <- tibble(text = sentence)
+
+#Tokenize - each word in the sentence becomes an analysis unit ####
+
+df_text <- df_text %>% unnest_tokens(output = word, input = text)
+
+df_text
+
+#token conversion removes punctuation 
+
+df_text %>% count(word)
+
+df_text %>% count(word) %>% ggplot(aes(x = word, y = n)) + geom_col()
+
+#Stop words - processing ####
+
+stop_words
+
+titles <- read.csv("imdbTop250.csv")
+
+names(titles)
+
+glimpse(titles)
+
+titles <- titles %>% unnest_tokens(word, Title) %>% 
+  select(Rating, word) %>% arrange(desc(Rating))
+
+titles
+
+#remember this looks a little weird because everything has been tokenized
+#So our data has expanded to accomodate breaking down titles into tokens 
+
+titles %>% mutate(word2 = fct_lump_n(word, 5, other_level = "other words")) %>%
+  count(word2) %>% ggplot(aes(x = reorder(word2, n),
+                              y = n)) +
+  geom_col() + coord_flip()
+
+#so as we can see we have a lot of words that occur over 5 times and the 
+#word that occur less than 5 times are all stop words. we can remove stop words
+#using anti-join 
+
+titles_no_sw <- anti_join(titles, stop_words, by = "word")
+
+titles_no_sw
+
+#removing sw reduced our dataset by ~7000 obs 
+#38% of the original dataset was noise
+
+#visualize now that we removed sw 
+
+titles_no_sw %>% count(word) %>% filter(n > 50) %>% 
+  ggplot(aes(x = reorder(word, n), y = n)) +
+  geom_col() + coord_flip()
+
+#Let's adjust to 50 for visualization purposes and keep in mind that 
+#we may have to jitter our axes labels if there is an overcrowding of tokens
+#that meet our filtering criteria 
+
+#WordClouds - Text-Specific Visualizations ####
+
+word_freq <- titles_no_sw %>% count(word)
+
+install.packages("wordcloud")
+library(wordcloud)
+
+wordcloud(words = word_freq$word,
+          freq = word_freq$n,
+          random.order = FALSE,
+          scale = c(2, 0.5),
+          min.freq = 50,
+          max.words = 100,
+          colors = c("#6FA8F5",
+                     "#FF4D45",
+                     "#FFC85E"))
+
+warnings()
+
+#combine word freqs with cleaned dataset 
+
+titles_no_sw <- left_join(titles_no_sw, word_freq, by = "word")
+
+#Compute correlation of rating to frequency count 
+
+corr <- titles_no_sw %>% select(Rating, n) %>%
+  correlation()
+
+corr
+
+install.packages("effectsize")
+library(effectsize)
+
+interpret_r(corr$r, rules = "cohen1988")
+
+#Be careful with interpretation, we have a moderate relationship between
+#title name and ranking, but we also saw that some of the higher rated
+#titles showed up multiple times as tokens so it's probably more 
+#likely that higher rated titles show up more frequently and inflate
+#the effect size estimate correlating the relationship between ranking and 
+#movie title which is to say we can't generalize that a title of the movie
+#will necessarily predict it's ranking 
+
+#N-Grams and Correlations between Words ####
+
+synopsis <- read.csv("imdb-top-250.csv")
+
+synopsis <- synopsis %>% unnest_tokens(bigram, summarytext, token = "ngrams", n = 2) %>%
+  select(bigram)
+
+synopsis
+
+#frequency
+
+synopsis %>% count(bigram, sort = T)
+
+#clean out our stopwords 
+
+bigram_split <- synopsis %>% separate(col = bigram,
+                                      into = c("word1", "word2"),
+                                      sep = " ")
+
+bigram_split
+
+#now we can remove stopwords across variables...
+
+bigram_cleaned <- bigram_split %>% filter(!word1 %in% stop_words$word) %>%
+                                   filter(!word2 %in% stop_words$word) 
+
+bigram_cleaned <-bigram_cleaned %>% count(word1, word2, sort = T)
+
+na.omit(bigram_cleaned)
+
+bigram_cleaned <- na.omit(bigram_cleaned)
+
+bigram_cleaned
+
+#unite our word variables back into a bigram 
+
+bigram_cleaned %>% unite(col = bigram, word1, word2, sep = "")
+
+#Network Analysis of Bigrams 
+
+install.packages("ggraph")
+library(ggraph)
+
+set.seed(1234)
+
+graph <- igraph::graph_from_data_frame(bigram_cleaned)
+
+ graph %>% ggraph(layout = "kk") +
+  geom_edge_link() +
+  geom_node_point()
+
+View(bigram_cleaned)
+
+#add names
+
+network_plot <- graph %>%
+  ggraph(layout = "kk") +
+  geom_edge_link(aes(col = factor(n))) + 
+  geom_node_point() +
+  geom_node_text(aes(label = name),
+                 vjust = 1, hjust = 1)
+
+network_plot
+
+#This was cool I will save it 
